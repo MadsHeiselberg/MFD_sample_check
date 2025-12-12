@@ -1,0 +1,156 @@
+---
+title: "Untitled"
+author: "Mads Heiselberg"
+date: "2025-12-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      fig.align = "center",
+                      fig.height = 10,
+                      out.width = "100%")
+
+library(tidyverse)
+library(purrr)
+library(ggplot2)
+library(patchwork)
+library(openxlsx)
+
+```
+
+
+# Data load
+```{r}
+ID_folder_path <- "C:/Users/CN61GS/OneDrive - Aalborg Universitet/Masseeksperimentet - Lab_data/ID_codes/" # Folder with all Microflora Danica scanned ID barcode + tube barcode files
+ID_plate_path <- "C:/Users/CN61GS/OneDrive - Aalborg Universitet/Masseeksperimentet - Lab_data/plates/" # Folder with all plate scanned files (EXT and STO in the same folder) 
+ID_files <- list.files(ID_folder_path, recursive = T, full.names = T)
+plate_all <- list.files(ID_plate_path, recursive = T, full.names = T)
+
+```
+
+
+```{r ID loads}
+
+#All barcodes and ID read by 
+data_ID <- map_dfr(ID_files, ~{
+  file <- basename(.x)   # use .x for the current element
+  data <- readxl::read_xls(.x) %>%
+    mutate(source_file = file)  # rename column for clarity
+  return(data)
+})
+# ID with barcodes 
+data_clean <- data_ID %>% filter(!`Tube Barcode` %in% c("EMPTY", "DECODE FAILURE")) %>%
+  filter(!str_detect(`Rack Barcode`, str_c(c("EXT", "STO"), collapse = "|")))
+barcodes<- data_clean %>% distinct(`Rack Barcode`)
+data_clean_ID <- data_clean %>% filter(!str_detect(`Rack Barcode`, str_c(c("EXT", "STO"), collapse = "|")))%>% distinct(`Rack Barcode`)
+
+# faild_id <- data %>%
+#   anti_join(barcodes, by = "Rack Barcode") %>% 
+#   distinct(`Rack Barcode`)
+
+```
+
+```{r plate loads}
+
+plate_data <- map_dfr(plate_all, ~{
+  file <- (.x)   # use .x for the current element
+  data <- readxl::read_xls(.x) %>%
+    mutate(source_file = file)  # rename column for clarity
+  return(data)
+})
+
+plate_ID <- plate_data %>% filter(!str_detect(`Rack Barcode`, "[D-d]dum")) %>% 
+            mutate(good = case_when(`Tube Barcode` %in% data_clean$`Tube Barcode`~"Match",
+                                                  `Tube Barcode` == "EMPTY"~ "EMPTY",
+                                                  `Tube Row` %in% c("C", "F") & `Tube Column` %in% c(3, 10)~"Negative",
+                                                  TRUE~"Not Match")) %>%
+  left_join(data_clean %>% select(`Scan Time`,`Rack Barcode`, `Tube Barcode`, source_file), by="Tube Barcode") 
+
+```
+
+
+```{r}
+data_all <- plate_ID %>%
+            rename(identification = good,
+                   `sample scan date` = `Scan Time.y`,
+                   sampleID = `Rack Barcode.y`,
+                   plateID = `Rack Barcode.x`,
+                   `plate scan date` = `Scan Time.x`)
+
+# Create a new workbook and add a sheet
+#write.xlsx(data_all, "masseexperiment_metadata.xlsx")
+
+summery_data <- data_all %>%
+  summarise( Total_ID = sum(!is.na(sampleID %>% unique())),
+             EXT_plate = sum(str_detect(plateID%>% unique() ,"EXT")==T ),
+             STO_plate = sum(str_detect(plateID%>% unique() ,"STO")==T ))
+summery_data
+
+summery_ID_data <- data_all %>%
+  mutate(`sample scan date` = format(as.POSIXct(`sample scan date`), format = "%y/%m-%d")) %>%
+  group_by(`sample scan date`) %>%
+  summarise(`Transfered ID` = n_distinct(sampleID, na.rm = TRUE), .groups = "drop") %>%
+  arrange(`sample scan date`) %>%
+  mutate(`Cumulative Total` = cumsum(`Transfered ID`)) %>% 
+  pivot_longer(cols = 2:3, names_to = "sampleID",values_to = "value")
+
+
+
+y_max <- max(summery_ID_data$value)
+sampleID_status <- summery_ID_data %>%
+  filter(!is.na(`sample scan date`)) %>% 
+  ggplot(aes(x = as.character(`sample scan date`), y = value, color = sampleID, group = sampleID)) +
+  geom_line()+
+  geom_point()+
+  scale_y_continuous(breaks = seq(0,y_max+10, 10), limits = c(0,y_max+10))+
+  theme_classic()+
+  labs(x="Transfer date", y = "Sample processed", title = "Masseeksperiment sample processing overview")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave(sampleID_status,filename="sampletransfer_status.png")
+
+
+```
+
+
+
+# plate proces
+
+```{r}
+row <- c("A", "B", "C", "D", "E", "F", "G","H")
+
+color <- scale_fill_manual(values=c("EMPTY" = "gray", "Match" = "darkgreen", "Not Match" ="darkred", "Negative" ="gray"), name = "Scanned positions")
+
+```
+
+
+
+# Individual plate check
+```{r Plot EXT plates}
+plate_ID%>% 
+  filter(str_detect(`Rack Barcode.x`, "EXT")) %>% 
+  ggplot(aes(x=as.factor(`Tube Column`), y=fct_rev(factor(`Tube Row`, levels =row)), fill=good))+geom_tile(color="black")+
+  scale_x_discrete(breaks = seq(1,12,1), position = "top")+
+  geom_text(aes(label =`Rack Barcode.y`), size = 2)+
+  color +
+  labs(title = paste("Extraction paltes"))+
+  facet_grid(`Rack Barcode.x`~.)+
+  theme_bw()+
+  theme(axis.title = element_blank())
+```
+
+```{r Plot STO plates}
+plate_ID%>% 
+  filter(str_detect(`Rack Barcode.x`, "STO")) %>% 
+  ggplot(aes(x=as.factor(`Tube Column`), y=fct_rev(factor(`Tube Row`, levels =row)), fill=good))+geom_tile(color="black")+
+  scale_x_discrete(breaks = seq(1,12,1), position = "top")+
+  geom_text(aes(label =`Rack Barcode.y`), size = 2)+
+  color +
+  labs(title = paste("Storage plates"))+
+  facet_grid(`Rack Barcode.x`~.)+
+  theme_bw()+
+  theme(axis.title = element_blank())
+```
