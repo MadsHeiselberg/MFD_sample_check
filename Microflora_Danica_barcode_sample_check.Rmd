@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "Investigation scanned Microflora Danica samples on matching barcodes and ID tages"
 author: "Mads Heiselberg"
 date: "2025-12-12"
 output: html_document
@@ -24,10 +24,10 @@ library(openxlsx)
 
 # Data load
 ```{r}
-ID_folder_path <- "C:/Users/CN61GS/OneDrive - Aalborg Universitet/Masseeksperimentet - Lab_data/ID_codes/" # Folder with all Microflora Danica scanned ID barcode + tube barcode files
-ID_plate_path <- "C:/Users/CN61GS/OneDrive - Aalborg Universitet/Masseeksperimentet - Lab_data/plates/" # Folder with all plate scanned files (EXT and STO in the same folder) 
-ID_files <- list.files(ID_folder_path, recursive = T, full.names = T)
-plate_all <- list.files(ID_plate_path, recursive = T, full.names = T)
+ID_folder_path <- "Sample_ID_files/" # Folder with all Microflora Danica scanned ID barcode + tube barcode files
+ID_plate_path <- "Scanned_plates_files/" # Folder with all plate scanned files (EXT and STO in the same folder) 
+ID_files <- list.files(ID_folder_path, pattern ="*.xls" , recursive = T, full.names = T)
+plate_all <- list.files(ID_plate_path, pattern ="*.xls", recursive = T, full.names = T)
 
 ```
 
